@@ -53,16 +53,63 @@ $\rightarrow$ *Consulter l'intégralité des tableaux de données, investigation
 _Architecture (modularité, couplage) ; sécurité (secrets, validation, transport) ;
 scalabilité ; **points de rupture** (SPOF)._
 
+> 📄 **Document détaillé associé** : L'analyse complète de l'architecture, du surapprentissage et de la sécurité est détaillée dans [audit/02_technique.md](audit/02_technique.md).
+
+### Synthèse du volet technique & points clés audités :
+* **Dette d'architecture** : Absence de pipeline scikit-learn, prétraitements manuels non encapsulés, divergence entre l'encodage à l'entraînement et l'inférence.
+* **Sécurité critique (CWE-798)** : Mot de passe de base de données de production présent en clair (`DB_PASSWORD = "medivox_prod_2024"`) dans `legacy/train.py`.
+* **Transport & Interface fragiles** : Inférence exécutée par commande CLI via SSH distant, sans API REST, sans schéma de validation des entrées ni gestion d'erreurs (casts `int`/`float` bruts provoquant des plantages).
+* **Point unique de défaillance (SPOF)** : Modèle unique localisé sur un serveur physique unique, sans redondance, déployé manuellement par simple `scp`.
+* **Surapprentissage masqué (Overfitting)** : Modèle évalué sur le train ($Acc = 77{,}2\,\%$, $AUC = 0{,}866$), s'effondrant à **$67{,}5\,\%$ d'accuracy** et **$0{,}722$ d'AUC** en validation croisée réelle 5-folds (battu par une simple régression logistique à $69{,}5\,\%$).
+* **Absence de gouvernance MLOps** : Aucune traçabilité de version (`.joblib` sans métadonnées), zéro journalisation des requêtes d'inférence, aucun suivi de drift (data ou concept drift).
+
 ## 4. Audit ressources
 _Mesures **psutil** (temps train/inférence, RSS, taille modèle) ; comparaison à
 **≤ 2 alternatives** ; lecture sobriété (chiffrée, honnête)._
+
+> 📄 **Document détaillé associé** : Les mesures chiffrées complètes et l'analyse de sobriété sont détaillées dans [audit/03_ressources.md](audit/03_ressources.md).
+
+### Synthèse des mesures outillées (psutil & benchmarks) :
+* **Modèle hérité (Random Forest)** : Taille disque = **$4{,}96$ Mo** | Mémoire process (RSS) = **$167{,}3$ Mo** | Inférence 10k séjours = **$52{,}01$ ms** | Temps train = **$548$ ms** | Score réel CV-5 = $AUC = 0{,}722$, $Acc = 67{,}5\,\%$.
+* **Alternative 1 (Régression Logistique)** : Taille disque = **$1$ Ko** (**$\times 5\,000$ plus légère**) | Inférence 10k = **$1{,}06$ ms** (**$\times 50$ plus rapide**) | Temps train = **$45$ ms** | Score réel CV-5 = **$AUC = 0{,}740$, $Acc = 69{,}5\,\%$** (surpasse le modèle legacy).
+* **Alternative 2 (HistGradientBoosting)** : Taille disque = **$186$ Ko** ($\times 27$ plus léger) | Inférence 10k = **$32{,}1$ ms** | Score réel CV-5 = $AUC = 0{,}738$, $Acc = 68{,}9\,\%$.
+* **Lecture sobriété honnête** : Si le coût compute brut (CPU) est négligeable à l'échelle d'une clinique, le coût opérationnel est lourd (cold start à chaque appel CLI, RAM de 170 Mo par process). La complexité du Random Forest est injustifiée au vu de sa sous-performance réelle.
 
 ## 5. Tableau d'indicateurs consolidé
 _12-18 lignes : indicateur / sévérité (🔴🟠🟡) / conséquence client. Hiérarchisé,
 pas tout au même niveau._
 
+> 📄 **Document détaillé associé** : La matrice consolidée des 15 risques hiérarchisés et cotés est consultable dans [audit/04_consolidation.md](audit/04_consolidation.md).
+
+### Matrice récapitulative des risques majeurs :
+* **🔴 Risques Critiques (6)** : Secret en clair dans le code, SPOF sur serveur unique sans réplication, Disparate Impact de genre effondré ($0{,}291$), Perte de chance majeure chez les femmes ($\text{FNR} = 73{,}7\,\%$), Violation de la minimisation RGPD (variable `sexe` sans justification médicale), Décision automatisée non supervisée (Art. 22 RGPD / jurisprudence *SCHUFA*).
+* **🟠 Risques Élevés (7)** : Qualification AI Act Annexe III 5.d en cas d'usage aux urgences, Overfitting sévère (perte de 10 points de précision hors train), Inférence par CLI SSH sans API ni validation d'entrées, Zéro log en production, Absence de monitoring de drift, Données de santé non pseudonymisées dans le dataset.
+* **🟡 Risques Modérés (2)** : Empreinte disque 5 000 fois supérieure à une alternative linéaire sans gain de performance, Latence d'inférence 50 fois plus lente.
+
 ## 6. Synthèse exécutive
 _½ page lisible en 5 min par un décideur non-ML (le « plus grave » d'abord)._
 
+### Synthèse d'Audit — À l'attention de la Direction (Hélène Tournier & Marc Lebourg)
+
+Le « prédicteur DMS v1 » actuellement en production chez MediVox Cliniques présente des **vulnérabilités critiques qui engagent directement la responsabilité juridique, clinique et opérationnelle du groupe**. Bien qu'il fournisse un résultat technique lors de son exécution, son maintien en l'état fait peser des menaces immédiates :
+
+1. **Urgence Juridique et Clinique (⚖️ DPO Marc Lebourg)** :
+   * **Discrimination systémique et perte de chance** : Alors que les durées de séjour constatées sont strictement identiques entre hommes et femmes ($5{,}6$ jours), le modèle sélectionne **48,6 % des hommes contre seulement 14,1 % des femmes** ($\text{DI} = \mathbf{0{,}291}$). Si le score pilote l'anticipation de places en Soins de Suite et Réadaptation (SSR), **73,7 % des femmes en séjour long effectif sont ignorées**, créant une perte de chance médicale massive.
+   * **Conformité RGPD & AI Act en défaut** : L'inclusion du sexe sans base médicale viole le principe de minimisation (art. 5). Le verdict binaire sans traçabilité du contrôle humain expose le groupe à l'interdiction de l'article 22 RGPD (*jurisprudence SCHUFA*). Enfin, si le score est invoqué dès l'accueil des urgences, il bascule sous le régime **Haut Risque de l'AI Act** (Annexe III point 5.d), passible de sanctions majeures.
+
+2. **Urgence Sécurité et Résilience (👩‍💻 Directrice Technique Hélène Tournier)** :
+   * **Faille de sécurité immédiate** : Un mot de passe de base de données de production (`DB_PASSWORD`) est stocké en clair dans le code source git.
+   * **Point de rupture unique (SPOF)** : Le système repose sur un script exécuté via SSH sur une machine unique, sans réplication, sans validation de schéma d'entrée et sans API. La panne de cette machine paralyse le service.
+   * **Surapprentissage et inefficience** : La précision affichée de 77 % est un trompe-l'œil d'apprentissage ; sur des cas réels, la précision s'effondre à **67,5 %**. Une simple régression logistique, **5 000 fois plus légère et 50 fois plus rapide**, offre une meilleure généralisation ($69,5\,\%$) tout en étant nativement explicable.
+
+**Recommandation d'audit** : Suspendre l'interfaçage automatique du score avec les décisions d'admission et de transfert, procéder à la rotation immédiate des identifiants de base de données, et engager les arbitrages de refonte (M7-B2).
+
 ## 7. Questions ouvertes
 _Ce qu'il faut clarifier avec le client avant toute évolution._
+
+Pour permettre à Hélène Tournier d'arbitrer les choix d'architecture et de budget (« quoi changer et à quel prix ») et à Marc Lebourg de finaliser l'AIPD :
+1. **Usage réel et protocole métier** : À quel processus soignant ou administratif précis la sortie `RISQUE_SEJOUR_PROLONGE` est-elle raccordée ? Quels soignants la consultent et quel acte est déclenché ?
+2. **Supervision humaine effective** : Existe-t-il une consigne écrite autorisant le praticien à contredire le score, et cette décision d'écartement est-elle tracée dans le DPI ?
+3. **Justification médicale du sexe** : La direction médicale dispose-t-elle d'un avis d'éthique clinique justifiant le maintien de la variable sexe dans l'algorithme ?
+4. **Intégration d'urgence (AI Act)** : Le script est-il sollicité lors du processus d'admission aux urgences pour orienter les flux ?
+5. **Cible d'infrastructure** : Quels sont les standards internes MediVox pour l'hébergement sécurisé des données de santé (HDS, conteneurisation, gestionnaire de secrets) ?
