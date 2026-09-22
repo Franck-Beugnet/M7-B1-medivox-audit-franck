@@ -35,6 +35,20 @@ réalité) ; RGPD santé (art. 9, minimisation, conservation) ; **usage réel** 
 AI Act (**qualification raisonnée** art. 6 → obligations si haut risque) ; art. 22
 (2 conditions examinées)._
 
+> 📄 **Document détaillé associé** : L'analyse complète, les mesures outillées et les argumentations juridiques sont détaillées dans [audit/01_ethique.md](audit/01_ethique.md).
+
+### Synthèse du volet éthique & points clés audités :
+* **Variables sensibles auditées** : Utilisation directe de `sexe_bin` (9,53 % d'importance, +16,8 points de probabilité de risque à profil clinique identique pour 85,5 % des patients) et surveillance des proxies indirects (`departement`, `service`).
+* **Disparate Impact mesuré & investigué** :
+  * Durée réelle de séjour (`dms_jours`) identique : **5,62 j** (F) vs **5,59 j** (M).
+  * Biais de l'étiquetage historique : $32{,}07\,\%$ vs $49{,}15\,\%$ ($\text{DI} = \mathbf{0{,}653}$).
+  * Amplification par le modèle : sélection de **$14{,}15\,\%$** des femmes vs **$48{,}57\,\%$** des hommes ($\text{DI} = \mathbf{0{,}291} \ll 0{,}80$).
+* **Investigation des erreurs et préjudice** : FNR Femmes à **$73{,}7\,\%$** (1 860 séjours réels longs ignorés) vs FPR Hommes à **$22{,}3\,\%$** (565 fausses alertes). Le préjudice est tranché selon l'usage opérationnel : perte de chance de soins d'aval (Femmes) vs risque d'éviction/stigmatisation (Hommes).
+* **Conformité RGPD** : Violation de la minimisation (art. 5(1)(c)), risque de requalification en décision automatisée non traçable (art. 22 / jurisprudence CJUE *SCHUFA*).
+* **AI Act** : Qualification raisonnée (art. 6) — bascule en Haut Risque si utilisé en régulation/triage aux urgences (Annexe III 5.d) ; exception de risque limité fermée (art. 6(3)) en raison du profilage de santé.
+
+$\rightarrow$ *Consulter l'intégralité des tableaux de données, investigations et questions ouvertes dans [audit/01_ethique.md](audit/01_ethique.md).*
+
 ## 3. Audit technique
 _Architecture (modularité, couplage) ; sécurité (secrets, validation, transport) ;
 scalabilité ; **points de rupture** (SPOF)._
